@@ -25,6 +25,8 @@ type Router interface {
 	Trace(path string, handlers ...any) Router
 	// Patch 添加PATCH请求处理器
 	Patch(path string, handlers ...any) Router
+	// All 添加任意请求处理器
+	All(path string, handlers ...any) Router
 	// Add 添加路由处理器
 	Add(methods []string, path string, handlers ...any) Router
 	// Group 路由组
@@ -95,7 +97,7 @@ func (r *router) Add(methods []string, path string, handlers ...any) Router {
 				continue
 			case Handler:
 				handlers[i] = func(ctx fiber.Ctx) error {
-					return h(&context{Ctx: ctx, proxy: r.proxy})
+					return h(ctx.(Context))
 				}
 			}
 		}
@@ -117,7 +119,7 @@ func (r *router) Group(prefix string, middlewares ...any) Router {
 			handlers = append(handlers, h)
 		case Handler:
 			handlers = append(handlers, func(ctx fiber.Ctx) error {
-				return h(&context{Ctx: ctx, proxy: r.proxy})
+				return h(ctx.(Context))
 			})
 		}
 	}
@@ -189,7 +191,7 @@ func (r *routeGroup) Add(methods []string, path string, handlers ...any) Router 
 				continue
 			case Handler:
 				handlers[i] = func(ctx fiber.Ctx) error {
-					return h(&context{Ctx: ctx, proxy: r.proxy})
+					return h(ctx.(Context))
 				}
 			}
 		}
@@ -209,7 +211,7 @@ func (r *routeGroup) Group(prefix string, middlewares ...any) Router {
 				continue
 			case Handler:
 				middlewares[i] = func(ctx fiber.Ctx) error {
-					return h(&context{Ctx: ctx, proxy: r.proxy})
+					return h(ctx.(Context))
 				}
 			}
 		}
