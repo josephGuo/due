@@ -6,6 +6,35 @@ import (
 
 type Handler = func(ctx Context) error
 
+// Router支持以下路由注册方式：
+//
+// 支持due风格路由处理器
+//  1. due.Handler
+//
+// 支持fiber风格路由处理器
+//  1. fiber.Handler
+//  2. func(fiber.Ctx)
+//
+// 支持express风格路由处理器
+//  1. func(fiber.Req, fiber.Res) error
+//  2. func(fiber.Req, fiber.Res)
+//  3. func(fiber.Req, fiber.Res, func() error) error
+//  4. func(fiber.Req, fiber.Res, func() error)
+//  5. func(fiber.Req, fiber.Res, func()) error
+//  6. func(fiber.Req, fiber.Res, func())
+//  7. func(fiber.Req, fiber.Res, func(error))
+//  8. func(fiber.Req, fiber.Res, func(error)) error
+//  9. func(fiber.Req, fiber.Res, func(error) error)
+//  10. func(fiber.Req, fiber.Res, func(error) error) error
+//
+// 支持net/http风格路由处理器
+//  1. http.HandlerFunc
+//  2. http.Handler
+//  3. func(http.ResponseWriter, *http.Request)
+//
+// 支持fasthttp风格路由处理器
+//  1. fasthttp.RequestHandler
+//  2. func(*fasthttp.RequestCtx) error
 type Router interface {
 	// Get 添加GET请求处理器
 	Get(path string, handlers ...any) Router
@@ -91,18 +120,9 @@ func (r *router) All(path string, handlers ...any) Router {
 // Add 添加路由处理器
 func (r *router) Add(methods []string, path string, handlers ...any) Router {
 	if len(handlers) > 0 {
-		for i := range handlers {
-			switch h := handlers[i].(type) {
-			case fiber.Handler:
-				continue
-			case Handler:
-				handlers[i] = func(ctx fiber.Ctx) error {
-					return h(ctx.(Context))
-				}
-			}
+		if handlers = adaptHandlers(handlers); len(handlers) > 0 {
+			r.app.Add(methods, path, handlers[0], handlers[1:]...)
 		}
-
-		r.app.Add(methods, path, handlers[0], handlers[1:]...)
 	}
 
 	return r
@@ -110,21 +130,7 @@ func (r *router) Add(methods []string, path string, handlers ...any) Router {
 
 // Group 路由组
 func (r *router) Group(prefix string, middlewares ...any) Router {
-	handlers := make([]any, 0, len(middlewares))
-	for i := range middlewares {
-		middleware := middlewares[i]
-
-		switch h := middleware.(type) {
-		case fiber.Handler:
-			handlers = append(handlers, h)
-		case Handler:
-			handlers = append(handlers, func(ctx fiber.Ctx) error {
-				return h(ctx.(Context))
-			})
-		}
-	}
-
-	return &routeGroup{proxy: r.proxy, router: r.app.Group(prefix, handlers...)}
+	return &routeGroup{proxy: r.proxy, router: r.app.Group(prefix, adaptHandlers(middlewares)...)}
 }
 
 type routeGroup struct {
@@ -185,18 +191,9 @@ func (r *routeGroup) All(path string, handlers ...any) Router {
 // Add 添加路由处理器
 func (r *routeGroup) Add(methods []string, path string, handlers ...any) Router {
 	if len(handlers) > 0 {
-		for i := range handlers {
-			switch h := handlers[i].(type) {
-			case fiber.Handler:
-				continue
-			case Handler:
-				handlers[i] = func(ctx fiber.Ctx) error {
-					return h(ctx.(Context))
-				}
-			}
+		if handlers = adaptHandlers(handlers); len(handlers) > 0 {
+			r.router.Add(methods, path, handlers[0], handlers[1:]...)
 		}
-
-		r.router.Add(methods, path, handlers[0], handlers[1:]...)
 	}
 
 	return r
@@ -204,20 +201,22 @@ func (r *routeGroup) Add(methods []string, path string, handlers ...any) Router 
 
 // Group 路由组
 func (r *routeGroup) Group(prefix string, middlewares ...any) Router {
-	if len(middlewares) > 0 {
-		for i := range middlewares {
-			switch h := middlewares[i].(type) {
-			case fiber.Handler:
-				continue
-			case Handler:
-				middlewares[i] = func(ctx fiber.Ctx) error {
-					return h(ctx.(Context))
-				}
-			}
-		}
+	return &routeGroup{router: r.router.Group(prefix, adaptHandlers(middlewares)...), proxy: r.proxy}
+}
 
-		return &routeGroup{router: r.router.Group(prefix, middlewares...), proxy: r.proxy}
+// 适配处理器
+func adaptHandlers(handlers []any) []any {
+	adaptedHandlers := make([]any, 0, len(handlers))
+
+	for i := range handlers {
+		if h, ok := handlers[i].(Handler); ok {
+			adaptedHandlers[i] = func(ctx fiber.Ctx) error {
+				return h(ctx.(Context))
+			}
+		} else if h != nil {
+			adaptedHandlers = append(adaptedHandlers, h)
+		}
 	}
 
-	return r
+	return adaptedHandlers
 }
