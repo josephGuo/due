@@ -210,9 +210,9 @@ func adaptHandlers(handlers []any) []any {
 
 	for i := range handlers {
 		if h, ok := handlers[i].(Handler); ok {
-			adaptedHandlers[i] = func(ctx fiber.Ctx) error {
+			adaptedHandlers = append(adaptedHandlers, func(ctx fiber.Ctx) error {
 				return h(ctx.(Context))
-			}
+			})
 		} else if h != nil {
 			adaptedHandlers = append(adaptedHandlers, h)
 		}
